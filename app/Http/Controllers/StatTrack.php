@@ -11,28 +11,36 @@ class StatTrack extends Controller
 {
     public function index()
     {
-        // Retrieve statistics from cache if available
-        $statistics = Cache::remember('sales_statistics', now()->addHours(1), function () {
-            return $this->calculateStatistics();
+        // Retrieve statistics for the current day or from cache if available
+        $currentDate = now()->toDateString();
+        $statistics = Cache::remember('sales_statistics_' . $currentDate, now()->addMinutes(10)), function () use ($currentDate) {
+            return $this->calculateStatisticsForDate($currentDate);
         });
+
+        // Retrieve historical statistics for previous days from the separate database
+        $historicalStatistics = $this->getHistoricalStatistics();
+
+        // Merge current statistics with historical statistics
+        $statistics = $historicalStatistics->merge($statistics);
 
         return view('index');
     }
 
-    private function calculateStatistics()
+    private function calculateStatisticsForDate($date)
     {
-        $statistics = [];
+        return [
+            $date => [
+                'sales_agents' => Sale::whereDate('datetime', $date)->groupBy('sales_agent')->selectRaw('sales_agent, COUNT(*) as total_sales, SUM(price) as total_price')->get(),
+                'products' => Sale::whereDate('datetime', $date)->groupBy('product')->selectRaw('product, COUNT(*) as total_sales, SUM(price) as total_price')->get(),
+                'customers' => Sale::whereDate('datetime', $date)->groupBy('customer')->selectRaw('customer, COUNT(*) as total_sales, SUM(price) as total_price')->get(),
+            ]
+        ];
+    }
 
-        // Calculate statistics for each day
-        $dates = Sale::selectRaw('DATE(datetime) as date')->distinct()->pluck('date');
-        foreach ($dates as $date) {
-            $statistics[$date] = [
-                'sales_agents' => Sale::whereDate('datetime', $date)->groupBy('sales_agent_id')->selectRaw('sales_agent_id, COUNT(*) as total_sales, SUM(price) as total_price')->with('salesAgent')->get(),
-                'products' => Sale::whereDate('datetime', $date)->groupBy('product_id')->selectRaw('product_id, COUNT(*) as total_sales, SUM(price) as total_price')->with('product')->get(),
-                'customers' => Sale::whereDate('datetime', $date)->groupBy('customer_id')->selectRaw('customer_id, COUNT(*) as total_sales, SUM(price) as total_price')->with('customer')->get(),
-            ];
-        }
-
-        return $statistics;
+    private function getHistoricalStatistics()
+    {
+        // Retrieve historical statistics from the separate database for previous days
+     
+        return collect();
     }
 }
